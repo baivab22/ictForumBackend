@@ -1198,7 +1198,7 @@ router.get('/api/colleges/system/enrollment-trends', async (req, res) => {
           absoluteGrowth: current.totalEnrollment - previous.totalEnrollment
         });
       }
-    });
+    };
 
     // Enrollment projections for next 3 years
     const avgGrowthRate = enrollmentGrowth.length > 0 
