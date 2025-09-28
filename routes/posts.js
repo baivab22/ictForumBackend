@@ -1,7 +1,7 @@
 const express = require('express');
 const { body } = require('express-validator');
 const path = require('path');
-const upload = require('../config/multer.config'); // Import the multer config
+// const upload = require('../config/multer.config'); // Import the multer config
 const {
   getPosts,
   getAdminPosts,
@@ -76,8 +76,8 @@ router.put('/:id/like', likePost);
 router.post('/:id/comments', commentValidation, addComment);
 
 // CRUD routes with multer for file uploads
-router.post('/', upload.single('image'), createPost);
-router.put('/:id', upload.single('image'), updatePost);
+router.post('/', createPost);
+router.put('/:id', updatePost);
 router.delete('/:id', deletePost);
 
 module.exports = router;
