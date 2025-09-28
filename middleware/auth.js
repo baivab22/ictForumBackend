@@ -1,46 +1,55 @@
 const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
-/**
- * Verify JWT from Authorization: Bearer &lt;token&gt;
- */
-function verifyJWT(req, res, next) {
-  try {
-    const header = req.headers['authorization'] || '';
-    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-    if (!token) return res.status(401).json({ message: 'Unauthorized' });
+// Protect routes - authentication required
+exports.protect = async (req, res, next) => {
+  let token;
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = { id: decoded.sub, role: decoded.role };
-    return next();
-  } catch (err) {
-    return res.status(401).json({ message: 'Invalid or expired token' });
+  // Check for token in headers
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    token = req.headers.authorization.split(' ')[1];
   }
-}
 
-/**
- * Optional auth: if token exists, set req.user; else continue as guest
- */
-function optionalAuth(req, res, next) {
+  // Make sure token exists
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      message: 'Not authorized to access this route'
+    });
+  }
+
   try {
-    const header = req.headers['authorization'] || '';
-    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-    if (token) {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      req.user = { id: decoded.sub, role: decoded.role };
+    // Verify token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    // Get user from token
+    req.user = await User.findById(decoded.id);
+    
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found'
+      });
     }
-  } catch (_) {}
-  return next();
-}
 
-/**
- * Role-based access control
- */
-function requireRole(...allowed) {
+    next();
+  } catch (error) {
+    return res.status(401).json({
+      success: false,
+      message: 'Not authorized to access this route'
+    });
+  }
+};
+
+// Grant access to specific roles
+exports.authorize = (...roles) => {
   return (req, res, next) => {
-    if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
-    if (!allowed.includes(req.user.role)) return res.status(403).json({ message: 'Forbidden' });
-    return next();
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: `User role ${req.user.role} is not authorized to access this route`
+      });
+    }
+    next();
   };
-}
-
-module.exports = { verifyJWT, optionalAuth, requireRole };
+};
