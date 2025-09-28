@@ -1,6 +1,7 @@
 const Post = require('../models/Post');
 const User = require('../models/User');
-const { validationResult } = require('express-validator');
+const path = require('path');
+const fs = require('fs');
 
 // @desc    Get all posts
 // @route   GET /api/posts
@@ -16,6 +17,8 @@ exports.getPosts = async (req, res) => {
       sort = '-createdAt',
       language = 'en'
     } = req.query;
+
+    console.log("get post query", req.query)
 
     // Build query
     let query = { published: true };
@@ -43,9 +46,9 @@ exports.getPosts = async (req, res) => {
     // Transform posts based on language
     const transformedPosts = posts.map(post => ({
       id: post._id,
-      title: post[`title_${language}`] || post.title_en,
-      content: post[`content_${language}`] || post.content_en,
-      excerpt: post[`excerpt_${language}`] || post.excerpt_en,
+      title: post[`title_${language}`] || post.title_en || 'Untitled',
+      content: post[`content_${language}`] || post.content_en || '',
+      excerpt: post[`excerpt_${language}`] || post.excerpt_en || '',
       category: post.category,
       image: post.image,
       author: post.author,
@@ -189,9 +192,9 @@ exports.getPost = async (req, res) => {
     // Transform post based on language
     const transformedPost = {
       id: post._id,
-      title: post[`title_${language}`] || post.title_en,
-      content: post[`content_${language}`] || post.content_en,
-      excerpt: post[`excerpt_${language}`] || post.excerpt_en,
+      title: post[`title_${language}`] || post.title_en || 'Untitled',
+      content: post[`content_${language}`] || post.content_en || '',
+      excerpt: post[`excerpt_${language}`] || post.excerpt_en || '',
       category: post.category,
       image: post.image,
       author: post.author,
@@ -221,19 +224,17 @@ exports.getPost = async (req, res) => {
 // @route   POST /api/posts
 // @access  Public (no auth required)
 exports.createPost = async (req, res) => {
+  console.log(req, "finallllllllllll")
   try {
-    // Check for validation errors
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
+    const postData = { ...req.body };
+
+    // Handle image upload
+    if (req.file) {
+      postData.image = `${req.file.filename}`;
     }
 
     // Create a default author if none provided
-    if (!req.body.author) {
+    if (!postData.author) {
       // Try to find or create a default admin user
       let defaultUser = await User.findOne({ email: 'admin@system.com' });
       
@@ -246,10 +247,15 @@ exports.createPost = async (req, res) => {
         });
       }
       
-      req.body.author = defaultUser._id;
+      postData.author = defaultUser._id;
     }
 
-    const post = await Post.create(req.body);
+    // Parse tags if they come as a string
+    if (typeof postData.tags === 'string') {
+      postData.tags = postData.tags.split(',').map(tag => tag.trim());
+    }
+
+    const post = await Post.create(postData);
     
     await post.populate('author', 'name email avatar');
 
@@ -273,16 +279,6 @@ exports.createPost = async (req, res) => {
 // @access  Public (no auth required)
 exports.updatePost = async (req, res) => {
   try {
-    // Check for validation errors
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
-    }
-
     let post = await Post.findById(req.params.id);
 
     if (!post) {
@@ -292,9 +288,28 @@ exports.updatePost = async (req, res) => {
       });
     }
 
-    post = await Post.findByIdAndUpdate(req.params.id, req.body, {
+    const updateData = { ...req.body };
+
+    // Handle image upload
+    if (req.file) {
+      // Delete old image if it exists
+      if (post.image) {
+        const oldImagePath = path.join(__dirname, '..', post.image);
+        if (fs.existsSync(oldImagePath)) {
+          fs.unlinkSync(oldImagePath);
+        }
+      }
+      updateData.image = `${req.file.filename}`;
+    }
+
+    // Parse tags if they come as a string
+    if (typeof updateData.tags === 'string') {
+      updateData.tags = updateData.tags.split(',').map(tag => tag.trim());
+    }
+
+    post = await Post.findByIdAndUpdate(req.params.id, updateData, {
       new: true,
-      runValidators: true
+      runValidators: false // Disable validators for flexibility
     }).populate('author', 'name email avatar');
 
     res.status(200).json({
@@ -323,6 +338,14 @@ exports.deletePost = async (req, res) => {
         success: false,
         message: 'Post not found'
       });
+    }
+
+    // Delete associated image if it exists
+    if (post.image) {
+      const imagePath = path.join(__dirname, '..', post.image);
+      if (fs.existsSync(imagePath)) {
+        fs.unlinkSync(imagePath);
+      }
     }
 
     await post.deleteOne();
@@ -389,13 +412,6 @@ exports.addComment = async (req, res) => {
   try {
     const { text, userName = 'Anonymous' } = req.body;
 
-    if (!text) {
-      return res.status(400).json({
-        success: false,
-        message: 'Comment text is required'
-      });
-    }
-
     const post = await Post.findById(req.params.id);
 
     if (!post) {
@@ -409,16 +425,22 @@ exports.addComment = async (req, res) => {
     let defaultUser = await User.findOne({ name: userName });
     
     if (!defaultUser) {
-      defaultUser = await User.create({
-        name: userName,
-        email: `${userName.toLowerCase().replace(/\s+/g, '')}@temp.com`,
-        password: 'temppassword'
-      });
+      try {
+        defaultUser = await User.create({
+          name: userName,
+          email: `${userName.toLowerCase().replace(/\s+/g, '')}@temp.com`,
+          password: 'temppassword'
+        });
+      } catch (err) {
+        // If user creation fails, use anonymous
+        defaultUser = { _id: null, name: userName };
+      }
     }
 
     const newComment = {
       user: defaultUser._id,
-      text: text.trim()
+      text: text ? text.trim() : '',
+      userName: userName
     };
 
     post.comments.unshift(newComment);

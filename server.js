@@ -12,6 +12,7 @@ dotenv.config();
 connectDB();
 
 const app = express();
+const path = require('path');
 
 // CORS Configuration - MUST come before helmet and other middleware
 const corsOptions = {
@@ -20,7 +21,7 @@ const corsOptions = {
 
     const allowedOrigins = process.env.NODE_ENV === 'production'
       ? [
-          'https://ictforum-frontend-j4i4dhx0i-baivabs-projects-31f870fd.vercel.app'
+          'https://ictforum-frontend-j4i4dhx0i-baivabs-projects-31f870fd.vercel.app','https://www.ictforumnepal.com/'
         ]
       : [
           'http://localhost:3000',
@@ -96,7 +97,7 @@ app.use('/api/', limiter);
 
 // YouTube API Configuration
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || 'AIzaSyB6YV3Zyma0ZoPNM71K_VwJ2ZORRYcPsGg';
-const YOUTUBE_CHANNEL_ID = process.env.YOUTUBE_CHANNEL_ID || 'UCjNgqJ_FMLntYVzq7daw1TQ';
+const YOUTUBE_CHANNEL_ID = process.env.YOUTUBE_CHANNEL_ID || 'UCb_QJWvlOVZSIhLyoBiLZ4Q';
 
 // Helper function to make YouTube API calls with better error handling
 const makeYouTubeAPICall = async (url) => {
@@ -129,7 +130,7 @@ app.use('/api/*', (req, res, next) => {
   // Set CORS headers explicitly
   const origin = req.get('Origin');
   const allowedOrigins = process.env.NODE_ENV === 'production' 
-    ? ['https://ictforum-frontend-j4i4dhx0i-baivabs-projects-31f870fd.vercel.app', 'https://www.your-frontend-domain.com']
+    ? ['https://ictforum-frontend-j4i4dhx0i-baivabs-projects-31f870fd.vercel.app', 'https://www.ictforumnepal.com/']
     : [
         'http://localhost:3000', 
         'http://localhost:5173', 
@@ -210,6 +211,11 @@ app.get('/api/youtube/videos', async (req, res) => {
     }
     
     console.log(`Found ${videosData.items.length} videos`);
+
+
+
+
+
     
     // Step 3: Get video statistics
     const videoIds = videosData.items
@@ -362,7 +368,7 @@ app.get('/api/health', (req, res) => {
     cors: {
       origin: req.get('Origin'),
       allowedOrigins: process.env.NODE_ENV === 'production' 
-        ? ['https://your-frontend-domain.com']
+        ? ['https://ictforum-frontend-j4i4dhx0i-baivabs-projects-31f870fd.vercel.app', 'https://www.ictforumnepal.com/']
         : ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:3001']
     },
     youtube: {
@@ -379,6 +385,13 @@ app.use('*', (req, res) => {
     message: `Route not found: ${req.method} ${req.originalUrl}`
   });
 });
+
+
+
+    // app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+    app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 
 // Global error handler
 app.use((err, req, res, next) => {

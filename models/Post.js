@@ -3,33 +3,30 @@ const mongoose = require('mongoose');
 const postSchema = new mongoose.Schema({
   title_en: {
     type: String,
-    required: [true, 'English title is required'],
     trim: true,
-    maxlength: [200, 'Title cannot be more than 200 characters']
+    maxlength: [500, 'Title cannot be more than 500 characters']
   },
   title_np: {
     type: String,
     trim: true,
-    maxlength: [200, 'Title cannot be more than 200 characters']
+    maxlength: [500, 'Title cannot be more than 500 characters']
   },
   content_en: {
-    type: String,
-    required: [true, 'English content is required']
+    type: String
   },
   content_np: {
     type: String
   },
   excerpt_en: {
     type: String,
-    maxlength: [500, 'Excerpt cannot be more than 500 characters']
+    maxlength: [1000, 'Excerpt cannot be more than 1000 characters']
   },
   excerpt_np: {
     type: String,
-    maxlength: [500, 'Excerpt cannot be more than 500 characters']
+    maxlength: [1000, 'Excerpt cannot be more than 1000 characters']
   },
   category: {
     type: String,
-    required: [true, 'Category is required'],
     enum: [
       'technology',
       'digitalTransformation',
@@ -45,8 +42,8 @@ const postSchema = new mongoose.Schema({
     type: String, // Will store the file path like '/uploads/posts/filename.jpg'
   },
   author: {
-    type: String,
-    default: 'admin'
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   },
   tags: [{
     type: String,
@@ -64,15 +61,17 @@ const postSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  likes: {
-    type: Number,
-    default: 0
-  },
+  likes: [{
+    type: String, // Store user IDs or anonymous identifiers
+  }],
   comments: [{
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
     text: {
       type: String,
-      required: true,
-      maxlength: [500, 'Comment cannot be more than 500 characters']
+      maxlength: [1000, 'Comment cannot be more than 1000 characters']
     },
     userName: {
       type: String,
