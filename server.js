@@ -16,39 +16,40 @@ const app = express();
 // CORS Configuration - MUST come before helmet and other middleware
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
-    const allowedOrigins = process.env.NODE_ENV === 'production' 
-      ? ['https://your-frontend-domain.com', 'https://www.your-frontend-domain.com']
+
+    const allowedOrigins = process.env.NODE_ENV === 'production'
+      ? [
+          'https://ictforum-frontend-j4i4dhx0i-baivabs-projects-31f870fd.vercel.app'
+        ]
       : [
-          'http://localhost:3000', 
-          'http://localhost:5173', 
+          'http://localhost:3000',
+          'http://localhost:5173',
           'http://localhost:3001',
           'http://127.0.0.1:3000',
           'http://127.0.0.1:5173',
           'http://127.0.0.1:3001'
         ];
-    
+
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       console.log('CORS blocked origin:', origin);
-      callback(null, false);
+      callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: [
-    'Content-Type', 
-    'Authorization', 
+    'Content-Type',
+    'Authorization',
     'x-requested-with',
     'Accept',
     'Origin',
     'X-Requested-With'
   ],
   exposedHeaders: ['set-cookie'],
-  optionsSuccessStatus: 200, // For legacy browser support
+  optionsSuccessStatus: 200,
   preflightContinue: false
 };
 
@@ -128,7 +129,7 @@ app.use('/api/*', (req, res, next) => {
   // Set CORS headers explicitly
   const origin = req.get('Origin');
   const allowedOrigins = process.env.NODE_ENV === 'production' 
-    ? ['https://ictforum-frontend-j4i4dhx0i-baivabs-projects-31f870fd.vercel.app/', 'https://www.your-frontend-domain.com']
+    ? ['https://ictforum-frontend-j4i4dhx0i-baivabs-projects-31f870fd.vercel.app', 'https://www.your-frontend-domain.com']
     : [
         'http://localhost:3000', 
         'http://localhost:5173', 
