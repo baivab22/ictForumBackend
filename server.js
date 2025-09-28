@@ -128,7 +128,7 @@ app.use('/api/*', (req, res, next) => {
   // Set CORS headers explicitly
   const origin = req.get('Origin');
   const allowedOrigins = process.env.NODE_ENV === 'production' 
-    ? ['https://your-frontend-domain.com', 'https://www.your-frontend-domain.com']
+    ? ['https://ictforum-frontend-j4i4dhx0i-baivabs-projects-31f870fd.vercel.app/', 'https://www.your-frontend-domain.com']
     : [
         'http://localhost:3000', 
         'http://localhost:5173', 
