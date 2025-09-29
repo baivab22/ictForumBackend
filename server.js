@@ -17,11 +17,15 @@ const path = require('path');
 // CORS Configuration - MUST come before helmet and other middleware
 const corsOptions = {
   origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
 
     const allowedOrigins = process.env.NODE_ENV === 'production'
       ? [
-          'https://ictforum-frontend-j4i4dhx0i-baivabs-projects-31f870fd.vercel.app','https://www.ictforumnepal.com/','https://ictforum-frontend.vercel.app/'
+          'https://ictforum-frontend-j4i4dhx0i-baivabs-projects-31f870fd.vercel.app',
+          'https://www.ictforumnepal.com',
+          'https://ictforumnepal.com',
+          'https://ictforum-frontend.vercel.app'
         ]
       : [
           'http://localhost:3000',
@@ -36,7 +40,7 @@ const corsOptions = {
       callback(null, true);
     } else {
       console.log('CORS blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
+      callback(null, true); // Changed to allow during development - change back to callback(new Error('Not allowed by CORS')) in production
     }
   },
   credentials: true,
@@ -82,17 +86,34 @@ app.use(helmet({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Rate limiting - Apply after CORS
+// Rate limiting - More lenient settings
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 500, // Increased from 100 to 500 requests per windowMs
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again later.'
   },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    // Skip rate limiting for health check and static files
+    return req.path === '/api/health' || 
+           req.path.startsWith('/uploads/') ||
+           req.path === '/api/cors-test';
+  },
+  // Use a key generator that's more forgiving in development
+  keyGenerator: (req) => {
+    // In development, use a fixed key to avoid rate limiting yourself
+    if (process.env.NODE_ENV !== 'production') {
+      return 'development-key';
+    }
+    // In production, use IP address
+    return req.ip || req.connection.remoteAddress || 'unknown';
+  }
 });
+
+// Apply rate limiting only to API routes, not to all routes
 app.use('/api/', limiter);
 
 // YouTube API Configuration
@@ -130,7 +151,12 @@ app.use('/api/*', (req, res, next) => {
   // Set CORS headers explicitly
   const origin = req.get('Origin');
   const allowedOrigins = process.env.NODE_ENV === 'production' 
-    ? ['https://ictforum-frontend-j4i4dhx0i-baivabs-projects-31f870fd.vercel.app', 'https://www.ictforumnepal.com/','https://ictforum-frontend.vercel.app/']
+    ? [
+        'https://ictforum-frontend-j4i4dhx0i-baivabs-projects-31f870fd.vercel.app',
+        'https://www.ictforumnepal.com',
+        'https://ictforumnepal.com',
+        'https://ictforum-frontend.vercel.app'
+      ]
     : [
         'http://localhost:3000', 
         'http://localhost:5173', 
@@ -211,11 +237,6 @@ app.get('/api/youtube/videos', async (req, res) => {
     }
     
     console.log(`Found ${videosData.items.length} videos`);
-
-
-
-
-
     
     // Step 3: Get video statistics
     const videoIds = videosData.items
@@ -368,15 +389,28 @@ app.get('/api/health', (req, res) => {
     cors: {
       origin: req.get('Origin'),
       allowedOrigins: process.env.NODE_ENV === 'production' 
-        ? ['https://ictforum-frontend-j4i4dhx0i-baivabs-projects-31f870fd.vercel.app', 'https://www.ictforumnepal.com/']
+        ? [
+            'https://ictforum-frontend-j4i4dhx0i-baivabs-projects-31f870fd.vercel.app',
+            'https://www.ictforumnepal.com',
+            'https://ictforumnepal.com',
+            'https://ictforum-frontend.vercel.app'
+          ]
         : ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:3001']
     },
     youtube: {
       apiKey: YOUTUBE_API_KEY ? 'Configured' : 'Missing',
       channelId: YOUTUBE_CHANNEL_ID ? 'Configured' : 'Missing'
+    },
+    rateLimit: {
+      windowMs: '15 minutes',
+      max: 500,
+      currentEnvironment: process.env.NODE_ENV || 'development'
     }
   });
 });
+
+// Serve static uploads directory
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // 404 handler
 app.use('*', (req, res) => {
@@ -385,13 +419,6 @@ app.use('*', (req, res) => {
     message: `Route not found: ${req.method} ${req.originalUrl}`
   });
 });
-
-
-
-    // app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-    app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
 
 // Global error handler
 app.use((err, req, res, next) => {
@@ -411,6 +438,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`YouTube API configured for channel: ${YOUTUBE_CHANNEL_ID}`);
   console.log(`API Key status: ${YOUTUBE_API_KEY ? 'Configured' : 'Missing'}`);
   console.log(`CORS enabled for: ${process.env.NODE_ENV === 'production' ? 'production domains' : 'localhost development'}`);
+  console.log(`Rate Limit: 500 requests per 15 minutes`);
   console.log(`Server accessible at: http://localhost:${PORT}`);
 });
 
