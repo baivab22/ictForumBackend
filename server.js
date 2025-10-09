@@ -325,6 +325,8 @@ app.get('/api/youtube/test', async (req, res) => {
 // ===== APPLICATION ROUTES =====
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/posts', require('./routes/posts'));
+app.use('/api/members', require('./routes/member'))
+
 
 // ===== UTILITY ENDPOINTS =====
 
