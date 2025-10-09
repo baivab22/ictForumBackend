@@ -234,7 +234,7 @@ exports.createPost = async (req, res) => {
     // ✅ FIX: Handle image upload - save only the relative path as string
     if (req.file) {
       // Save the relative path that can be accessed via browser
-      postData.image = `/uploads/posts/${req.file.filename}`;
+      postData.image = `${req.file.filename}`;
       console.log('✅ Image path saved:', postData.image);
     }
 
@@ -334,7 +334,7 @@ exports.updatePost = async (req, res) => {
       }
       
       // Save new image path as string
-      updateData.image = `/uploads/posts/${req.file.filename}`;
+      updateData.image = `${req.file.filename}`;
       console.log('✅ New image path saved:', updateData.image);
     }
 
