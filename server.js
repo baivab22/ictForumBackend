@@ -338,7 +338,11 @@ app.get('/api/cors-test', (req, res) => {
   });
 });
 
-// Health check endpoint
+// Routes
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/posts', require('./routes/posts'));
+app.use('/api/members', require('./routes/member'));
+// Health check route - Enhanced
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     success: true,

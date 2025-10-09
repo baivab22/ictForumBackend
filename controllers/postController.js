@@ -1,3 +1,4 @@
+// controllers/postController.js
 const Post = require('../models/Post');
 const User = require('../models/User');
 const path = require('path');
@@ -18,7 +19,7 @@ exports.getPosts = async (req, res) => {
       language = 'en'
     } = req.query;
 
-    console.log("get post query", req.query)
+    console.log("get post query", req.query);
 
     // Build query
     let query = { published: true };
@@ -224,13 +225,17 @@ exports.getPost = async (req, res) => {
 // @route   POST /api/posts
 // @access  Public (no auth required)
 exports.createPost = async (req, res) => {
-  console.log(req, "finallllllllllll")
+  console.log("Create post request body:", req.body);
+  console.log("Create post request file:", req.file);
+  
   try {
     const postData = { ...req.body };
 
-    // Handle image upload
+    // ✅ FIX: Handle image upload - save only the relative path as string
     if (req.file) {
-      postData.image = `${req.file.filename}`;
+      // Save the relative path that can be accessed via browser
+      postData.image = `/uploads/posts/${req.file.filename}`;
+      console.log('✅ Image path saved:', postData.image);
     }
 
     // Create a default author if none provided
@@ -255,9 +260,13 @@ exports.createPost = async (req, res) => {
       postData.tags = postData.tags.split(',').map(tag => tag.trim());
     }
 
+    console.log('📝 Creating post with data:', postData);
+
     const post = await Post.create(postData);
     
     await post.populate('author', 'name email avatar');
+
+    console.log('✅ Post created successfully:', post._id);
 
     res.status(201).json({
       success: true,
@@ -265,7 +274,15 @@ exports.createPost = async (req, res) => {
       data: post
     });
   } catch (error) {
-    console.error('Create post error:', error);
+    console.error('❌ Create post error:', error);
+    
+    // Delete uploaded file if there was an error
+    if (req.file && req.file.path) {
+      fs.unlink(req.file.path, (err) => {
+        if (err) console.error('Error deleting file:', err);
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Server error while creating post',
@@ -278,10 +295,20 @@ exports.createPost = async (req, res) => {
 // @route   PUT /api/posts/:id
 // @access  Public (no auth required)
 exports.updatePost = async (req, res) => {
+  console.log(`✏️ Update post request for ID: ${req.params.id}`);
+  console.log("Update post request body:", req.body);
+  console.log("Update post request file:", req.file);
+  
   try {
     let post = await Post.findById(req.params.id);
 
     if (!post) {
+      // If file was uploaded but post doesn't exist, delete it
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+        console.log('🗑️ Deleted uploaded file (post not found)');
+      }
+      
       return res.status(404).json({
         success: false,
         message: 'Post not found'
@@ -290,16 +317,25 @@ exports.updatePost = async (req, res) => {
 
     const updateData = { ...req.body };
 
-    // Handle image upload
+    // ✅ FIX: Handle image upload - save only the relative path as string
     if (req.file) {
-      // Delete old image if it exists
-      if (post.image) {
-        const oldImagePath = path.join(__dirname, '..', post.image);
+      // Delete old image if it exists and is a string path
+      if (post.image && typeof post.image === 'string') {
+        const oldImagePath = path.join(__dirname, '../', post.image);
         if (fs.existsSync(oldImagePath)) {
           fs.unlinkSync(oldImagePath);
+          console.log('🗑️ Deleted old image:', post.image);
         }
       }
-      updateData.image = `${req.file.filename}`;
+      // Handle legacy object format
+      else if (post.image && post.image.path && fs.existsSync(post.image.path)) {
+        fs.unlinkSync(post.image.path);
+        console.log('🗑️ Deleted old image (legacy format)');
+      }
+      
+      // Save new image path as string
+      updateData.image = `/uploads/posts/${req.file.filename}`;
+      console.log('✅ New image path saved:', updateData.image);
     }
 
     // Parse tags if they come as a string
@@ -307,10 +343,14 @@ exports.updatePost = async (req, res) => {
       updateData.tags = updateData.tags.split(',').map(tag => tag.trim());
     }
 
+    console.log('📝 Updating post with data:', updateData);
+
     post = await Post.findByIdAndUpdate(req.params.id, updateData, {
       new: true,
       runValidators: false // Disable validators for flexibility
     }).populate('author', 'name email avatar');
+
+    console.log('✅ Post updated successfully');
 
     res.status(200).json({
       success: true,
@@ -318,10 +358,19 @@ exports.updatePost = async (req, res) => {
       data: post
     });
   } catch (error) {
-    console.error('Update post error:', error);
+    console.error('❌ Update post error:', error);
+    
+    // Delete uploaded file if there was an error
+    if (req.file && req.file.path) {
+      fs.unlink(req.file.path, (err) => {
+        if (err) console.error('Error deleting file:', err);
+      });
+    }
+
     res.status(500).json({
       success: false,
-      message: 'Server error while updating post'
+      message: 'Server error while updating post',
+      error: error.message
     });
   }
 };
@@ -341,21 +390,30 @@ exports.deletePost = async (req, res) => {
     }
 
     // Delete associated image if it exists
+    // Handle both string path and legacy object format
     if (post.image) {
-      const imagePath = path.join(__dirname, '..', post.image);
-      if (fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
+      if (typeof post.image === 'string') {
+        const imagePath = path.join(__dirname, '../', post.image);
+        if (fs.existsSync(imagePath)) {
+          fs.unlinkSync(imagePath);
+          console.log('🗑️ Deleted image:', post.image);
+        }
+      } else if (post.image.path && fs.existsSync(post.image.path)) {
+        fs.unlinkSync(post.image.path);
+        console.log('🗑️ Deleted image (legacy format)');
       }
     }
 
     await post.deleteOne();
+
+    console.log('✅ Post deleted successfully');
 
     res.status(200).json({
       success: true,
       message: 'Post deleted successfully'
     });
   } catch (error) {
-    console.error('Delete post error:', error);
+    console.error('❌ Delete post error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error while deleting post'
