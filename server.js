@@ -3,6 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
+const path = require('path');
 const connectDB = require('./config/db');
 
 // Load env vars
@@ -12,12 +13,11 @@ dotenv.config();
 connectDB();
 
 const app = express();
-const path = require('path');
 
-// CORS Configuration - MUST come before helmet and other middleware
+// ===== CORS CONFIGURATION =====
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, Postman, etc.)
+    // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
 
     const allowedOrigins = process.env.NODE_ENV === 'production'
@@ -40,7 +40,8 @@ const corsOptions = {
       callback(null, true);
     } else {
       console.log('CORS blocked origin:', origin);
-      callback(null, true); // Changed to allow during development - change back to callback(new Error('Not allowed by CORS')) in production
+      // Allow during development, block in production
+      callback(process.env.NODE_ENV === 'production' ? new Error('Not allowed by CORS') : null, true);
     }
   },
   credentials: true,
@@ -59,11 +60,9 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-
-// Handle preflight requests explicitly
 app.options('*', cors(corsOptions));
 
-// Modified helmet configuration to work with CORS
+// ===== HELMET CONFIGURATION =====
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
   crossOriginResourcePolicy: { policy: "cross-origin" },
@@ -82,14 +81,24 @@ app.use(helmet({
   },
 }));
 
-// Body parser - should come after CORS
+// ===== BODY PARSER =====
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Rate limiting - More lenient settings
+// ===== STATIC FILE SERVING =====
+// IMPORTANT: Serve uploaded files - must come before routes
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+  maxAge: '1d', // Cache for 1 day
+  etag: true,
+  lastModified: true
+}));
+
+console.log('Static files served from:', path.join(__dirname, 'uploads'));
+
+// ===== RATE LIMITING =====
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 500, // Increased from 100 to 500 requests per windowMs
+  max: 500,
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again later.'
@@ -97,30 +106,25 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => {
-    // Skip rate limiting for health check and static files
     return req.path === '/api/health' || 
            req.path.startsWith('/uploads/') ||
            req.path === '/api/cors-test';
   },
-  // Use a key generator that's more forgiving in development
   keyGenerator: (req) => {
-    // In development, use a fixed key to avoid rate limiting yourself
     if (process.env.NODE_ENV !== 'production') {
       return 'development-key';
     }
-    // In production, use IP address
     return req.ip || req.connection.remoteAddress || 'unknown';
   }
 });
 
-// Apply rate limiting only to API routes, not to all routes
 app.use('/api/', limiter);
 
-// YouTube API Configuration
+// ===== YOUTUBE API CONFIGURATION =====
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || 'AIzaSyB6YV3Zyma0ZoPNM71K_VwJ2ZORRYcPsGg';
 const YOUTUBE_CHANNEL_ID = process.env.YOUTUBE_CHANNEL_ID || 'UCb_QJWvlOVZSIhLyoBiLZ4Q';
 
-// Helper function to make YouTube API calls with better error handling
+// Helper function for YouTube API calls
 const makeYouTubeAPICall = async (url) => {
   try {
     const response = await fetch(url);
@@ -143,58 +147,26 @@ const makeYouTubeAPICall = async (url) => {
   }
 };
 
-// Add CORS headers explicitly to all API routes
+// ===== API REQUEST LOGGER =====
 app.use('/api/*', (req, res, next) => {
-  // Log the request for debugging
   console.log(`${req.method} ${req.path} - Origin: ${req.get('Origin')}`);
-  
-  // Set CORS headers explicitly
-  const origin = req.get('Origin');
-  const allowedOrigins = process.env.NODE_ENV === 'production' 
-    ? [
-        'https://ictforum-frontend-j4i4dhx0i-baivabs-projects-31f870fd.vercel.app',
-        'https://www.ictforumnepal.com',
-        'https://ictforumnepal.com',
-        'https://ictforum-frontend.vercel.app'
-      ]
-    : [
-        'http://localhost:3000', 
-        'http://localhost:5173', 
-        'http://localhost:3001',
-        'http://127.0.0.1:3000',
-        'http://127.0.0.1:5173',
-        'http://127.0.0.1:3001'
-      ];
-  
-  if (allowedOrigins.includes(origin) || !origin) {
-    res.header('Access-Control-Allow-Origin', origin || '*');
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,PATCH,OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-requested-with, Accept, Origin, X-Requested-With');
-  }
-  
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
-  }
-  
   next();
 });
 
-// YouTube API endpoint - Enhanced with better error handling
+// ===== YOUTUBE API ENDPOINTS =====
+
+// Get YouTube videos
 app.get('/api/youtube/videos', async (req, res) => {
   try {
-    const maxResults = Math.min(parseInt(req.query.maxResults) || 6, 50); // Limit to max 50
+    const maxResults = Math.min(parseInt(req.query.maxResults) || 6, 50);
     
     console.log(`Fetching YouTube videos for channel: ${YOUTUBE_CHANNEL_ID}`);
     
-    // Step 1: Get channel info
+    // Get channel info
     const channelUrl = `https://www.googleapis.com/youtube/v3/channels?part=contentDetails,snippet,statistics&id=${YOUTUBE_CHANNEL_ID}&key=${YOUTUBE_API_KEY}`;
-    console.log('Channel API URL:', channelUrl);
-    
     const channelData = await makeYouTubeAPICall(channelUrl);
     
     if (!channelData.items?.length) {
-      console.error('No channel found with ID:', YOUTUBE_CHANNEL_ID);
       return res.status(404).json({ 
         success: false,
         error: 'Channel not found',
@@ -207,9 +179,6 @@ app.get('/api/youtube/videos', async (req, res) => {
     const channelTitle = channelInfo?.snippet?.title;
     const subscriberCount = channelInfo?.statistics?.subscriberCount;
     
-    console.log('Channel found:', channelTitle);
-    console.log('Uploads playlist ID:', uploadsPlaylistId);
-    
     if (!uploadsPlaylistId) {
       return res.status(404).json({ 
         success: false,
@@ -217,14 +186,11 @@ app.get('/api/youtube/videos', async (req, res) => {
       });
     }
     
-    // Step 2: Get videos from uploads playlist
+    // Get videos from uploads playlist
     const playlistUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${uploadsPlaylistId}&maxResults=${maxResults}&key=${YOUTUBE_API_KEY}`;
-    console.log('Playlist API URL:', playlistUrl);
-    
     const videosData = await makeYouTubeAPICall(playlistUrl);
     
     if (!videosData.items?.length) {
-      console.log('No videos found in uploads playlist');
       return res.json({ 
         success: true,
         videos: [], 
@@ -236,9 +202,7 @@ app.get('/api/youtube/videos', async (req, res) => {
       });
     }
     
-    console.log(`Found ${videosData.items.length} videos`);
-    
-    // Step 3: Get video statistics
+    // Get video statistics
     const videoIds = videosData.items
       .map(item => item.snippet?.resourceId?.videoId)
       .filter(Boolean);
@@ -254,16 +218,15 @@ app.get('/api/youtube/videos', async (req, res) => {
     
     const videoIdsString = videoIds.join(',');
     const statsUrl = `https://www.googleapis.com/youtube/v3/videos?part=statistics,contentDetails&id=${videoIdsString}&key=${YOUTUBE_API_KEY}`;
-    console.log('Stats API URL:', statsUrl);
     
     let statsData = { items: [] };
     try {
       statsData = await makeYouTubeAPICall(statsUrl);
     } catch (error) {
-      console.warn('Failed to fetch video statistics, proceeding without stats:', error.message);
+      console.warn('Failed to fetch video statistics:', error.message);
     }
     
-    // Step 4: Combine data
+    // Combine data
     const videos = videosData.items
       .filter(video => video.snippet?.resourceId?.videoId)
       .map(video => {
@@ -289,8 +252,6 @@ app.get('/api/youtube/videos', async (req, res) => {
         };
       });
     
-    console.log(`Successfully processed ${videos.length} videos`);
-    
     res.json({ 
       success: true,
       videos,
@@ -309,8 +270,6 @@ app.get('/api/youtube/videos', async (req, res) => {
     
   } catch (error) {
     console.error('YouTube API Error:', error);
-    
-    // Provide detailed error response
     res.status(500).json({ 
       success: false,
       error: error.message,
@@ -323,7 +282,7 @@ app.get('/api/youtube/videos', async (req, res) => {
   }
 });
 
-// Additional YouTube API endpoints for debugging
+// Get channel info
 app.get('/api/youtube/channel-info', async (req, res) => {
   try {
     const channelUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails&id=${YOUTUBE_CHANNEL_ID}&key=${YOUTUBE_API_KEY}`;
@@ -342,11 +301,10 @@ app.get('/api/youtube/channel-info', async (req, res) => {
   }
 });
 
-// Test endpoint to verify API key
+// Test YouTube API key
 app.get('/api/youtube/test', async (req, res) => {
   try {
     const testUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true&key=${YOUTUBE_API_KEY}`;
-    
     const response = await fetch(testUrl);
     const data = await response.json();
     
@@ -364,38 +322,32 @@ app.get('/api/youtube/test', async (req, res) => {
   }
 });
 
+// ===== APPLICATION ROUTES =====
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/posts', require('./routes/posts'));
+
+// ===== UTILITY ENDPOINTS =====
+
 // CORS test endpoint
 app.get('/api/cors-test', (req, res) => {
   res.json({
     success: true,
     message: 'CORS is working',
     origin: req.get('Origin'),
-    headers: req.headers,
     timestamp: new Date().toISOString()
   });
 });
 
-// Routes
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/posts', require('./routes/posts'));
-
-// Health check route - Enhanced
+// Health check endpoint
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     success: true,
     message: 'ICT Forum Nepal API is running',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
-    cors: {
-      origin: req.get('Origin'),
-      allowedOrigins: process.env.NODE_ENV === 'production' 
-        ? [
-            'https://ictforum-frontend-j4i4dhx0i-baivabs-projects-31f870fd.vercel.app',
-            'https://www.ictforumnepal.com',
-            'https://ictforumnepal.com',
-            'https://ictforum-frontend.vercel.app'
-          ]
-        : ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:3001']
+    uploads: {
+      directory: path.join(__dirname, 'uploads'),
+      postsDirectory: path.join(__dirname, 'uploads/posts')
     },
     youtube: {
       apiKey: YOUTUBE_API_KEY ? 'Configured' : 'Missing',
@@ -404,13 +356,12 @@ app.get('/api/health', (req, res) => {
     rateLimit: {
       windowMs: '15 minutes',
       max: 500,
-      currentEnvironment: process.env.NODE_ENV || 'development'
+      environment: process.env.NODE_ENV || 'development'
     }
   });
 });
 
-// Serve static uploads directory
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// ===== ERROR HANDLERS =====
 
 // 404 handler
 app.use('*', (req, res) => {
@@ -431,20 +382,26 @@ app.use((err, req, res, next) => {
   });
 });
 
+// ===== START SERVER =====
 const PORT = process.env.PORT || 5000;
 
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
-  console.log(`YouTube API configured for channel: ${YOUTUBE_CHANNEL_ID}`);
-  console.log(`API Key status: ${YOUTUBE_API_KEY ? 'Configured' : 'Missing'}`);
-  console.log(`CORS enabled for: ${process.env.NODE_ENV === 'production' ? 'production domains' : 'localhost development'}`);
-  console.log(`Rate Limit: 500 requests per 15 minutes`);
-  console.log(`Server accessible at: http://localhost:${PORT}`);
+  console.log('\n========================================');
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🌐 Server accessible at: http://localhost:${PORT}`);
+  console.log(`📁 Uploads directory: ${path.join(__dirname, 'uploads')}`);
+  console.log(`📸 Posts images: ${path.join(__dirname, 'uploads/posts')}`);
+  console.log(`🎥 YouTube Channel: ${YOUTUBE_CHANNEL_ID}`);
+  console.log(`🔑 YouTube API: ${YOUTUBE_API_KEY ? 'Configured' : 'Missing'}`);
+  console.log(`🔒 CORS: ${process.env.NODE_ENV === 'production' ? 'Production domains' : 'Development (localhost)'}`);
+  console.log(`⏱️  Rate Limit: 500 requests/15min`);
+  console.log('========================================\n');
 });
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err, promise) => {
-  console.log(`Error: ${err.message}`);
+  console.log(`❌ Error: ${err.message}`);
   server.close(() => {
     process.exit(1);
   });
