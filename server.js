@@ -6,8 +6,13 @@ const dotenv = require('dotenv');
 const path = require('path');
 const connectDB = require('./config/db');
 
+require('dotenv').config();
+
 // Load env vars
 dotenv.config();
+
+const { cloudinary } = require('./config/cloudinary.config');
+
 
 // Connect to database
 connectDB();

@@ -1,163 +1,93 @@
-// config/multer.config.js
+/**
+ * Multer Configuration for Cloudinary Uploads
+ * -------------------------------------------
+ * Handles two main upload types:
+ *  - Posts (single image)
+ *  - Members (multiple documents & images)
+ */
+
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const { cloudinary } = require('./cloudinary.config');
 
-// ============================================
-// UTILITY FUNCTIONS
-// ============================================
+// ============================================================
+// 🖼️ CLOUDINARY STORAGE FOR POSTS
+// ============================================================
 
-/**
- * Create uploads directory if it doesn't exist
- */
-const createUploadDir = () => {
-  const uploadDir = path.join(__dirname, '../uploads');
-  if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-    console.log('✅ Created uploads directory');
-  }
-};
-
-// ============================================
-// POST IMAGES CONFIGURATION
-// ============================================
-
-/**
- * Storage configuration for post images
- */
-const postStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    createUploadDir();
-    
-    const subDir = 'posts';
-    const fullPath = path.join(__dirname, '../uploads', subDir);
-    
-    // Create subdirectory if it doesn't exist
-    if (!fs.existsSync(fullPath)) {
-      fs.mkdirSync(fullPath, { recursive: true });
-      console.log(`✅ Created directory: ${subDir}`);
-    }
-    
-    console.log('📂 Saving file to:', fullPath);
-    cb(null, fullPath);
-  },
-  
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname);
-    const name = path.basename(file.originalname, ext).replace(/\s+/g, '_');
-    const filename = `post-${name}-${uniqueSuffix}${ext}`;
-    
-    console.log('📸 Generated filename:', filename);
-    cb(null, filename);
+const postStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: 'ictforum/posts', // Cloudinary folder for post images
+    allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
+    transformation: [{ width: 1200, crop: 'limit' }], // optional resize
+    public_id: (req, file) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+      const name = file.originalname.split('.')[0].replace(/\s+/g, '_');
+      return `post-${name}-${uniqueSuffix}`;
+    },
   },
 });
 
-/**
- * File filter for post images
- */
-const postFileFilter = (req, file, cb) => {
-  console.log('🔍 File filter check:', file.originalname, '|', file.mimetype);
-  
-  if (file.mimetype.startsWith('image/')) {
-    cb(null, true);
-  } else {
-    cb(new Error(`Only image files (JPG, PNG, GIF, WebP) are allowed! You uploaded: ${file.mimetype}`), false);
-  }
-};
-
-/**
- * Multer instance for post images
- */
+// Multer instance for post uploads
 const postUploader = multer({
   storage: postStorage,
-  limits: { 
+  limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
-  fileFilter: postFileFilter,
 });
 
-// ============================================
-// MEMBER DOCUMENTS CONFIGURATION
-// ============================================
+// ============================================================
+// 👥 CLOUDINARY STORAGE FOR MEMBER DOCUMENTS
+// ============================================================
 
-/**
- * Storage configuration for member documents
- */
-const memberStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    createUploadDir();
-    
-    // Determine subdirectory based on field name
-    let subDir = 'members';
+const memberStorage = new CloudinaryStorage({
+  cloudinary,
+  params: async (req, file) => {
+    // Determine Cloudinary subfolder based on field name
+    let folder = 'ictforum/members/others';
     switch (file.fieldname) {
       case 'citizenshipCopy':
-        subDir = 'members/citizenship';
+        folder = 'ictforum/members/citizenship';
         break;
       case 'photo':
-        subDir = 'members/photos';
+        folder = 'ictforum/members/photos';
         break;
       case 'recommendationLetter':
-        subDir = 'members/recommendations';
+        folder = 'ictforum/members/recommendations';
         break;
       case 'resume':
-        subDir = 'members/resumes';
+        folder = 'ictforum/members/resumes';
         break;
-      default:
-        subDir = 'members/others';
     }
-    
-    const fullPath = path.join(__dirname, '../uploads', subDir);
-    
-    // Create subdirectory if it doesn't exist
-    if (!fs.existsSync(fullPath)) {
-      fs.mkdirSync(fullPath, { recursive: true });
-      console.log(`✅ Created directory: ${subDir}`);
-    }
-    
-    cb(null, fullPath);
-  },
-  
-  filename: (req, file, cb) => {
+
+    // Create a clean and unique filename
+    const name = file.originalname.split('.')[0].replace(/\s+/g, '_');
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname);
-    const name = path.basename(file.originalname, ext).replace(/\s+/g, '_');
-    cb(null, `member-${name}-${uniqueSuffix}${ext}`);
+
+    return {
+      folder,
+      allowed_formats: ['jpg', 'jpeg', 'png', 'pdf', 'webp'],
+      public_id: `member-${name}-${uniqueSuffix}`,
+    };
   },
 });
 
-/**
- * File filter for member documents
- */
-const memberFileFilter = (req, file, cb) => {
-  console.log('🔍 Member file check:', file.originalname, '|', file.mimetype);
-  
-  if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
-    cb(null, true);
-  } else {
-    cb(new Error(`Only images and PDFs are allowed for member uploads! You uploaded: ${file.mimetype}`), false);
-  }
-};
-
-/**
- * Multer instance for member documents
- */
+// Multer instance for member uploads
 const memberUploader = multer({
   storage: memberStorage,
-  limits: { 
+  limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
-  fileFilter: memberFileFilter,
 });
 
-// ============================================
-// UPLOAD MIDDLEWARE CONFIGURATIONS
-// ============================================
+// ============================================================
+// 🚀 UPLOAD MIDDLEWARE EXPORTS
+// ============================================================
 
-/**
- * Member upload middleware
- * Handles multiple document fields simultaneously
- */
+// For single post image upload → req.file
+const upload = postUploader.single('image');
+
+// For multi-field member uploads → req.files
 const memberUpload = memberUploader.fields([
   { name: 'citizenshipCopy', maxCount: 1 },
   { name: 'photo', maxCount: 1 },
@@ -165,25 +95,13 @@ const memberUpload = memberUploader.fields([
   { name: 'resume', maxCount: 1 },
 ]);
 
-/**
- * Post upload middleware
- * This is what you'll use in your routes: upload.single('image')
- */
-const upload = postUploader;
-
-// ============================================
-// EXPORTS
-// ============================================
-
-console.log('📦 Exporting multer configurations...');
-console.log('✅ upload (for posts):', typeof upload);
-console.log('✅ memberUpload (for members):', typeof memberUpload);
-console.log('✅ postUploader:', typeof postUploader);
-console.log('✅ memberUploader:', typeof memberUploader);
+// ============================================================
+// 🧾 EXPORT CONFIGS
+// ============================================================
 
 module.exports = {
-  upload,           // Primary export for post uploads
-  memberUpload,     // For member multi-field uploads
-  postUploader,     // Raw post uploader instance
-  memberUploader,   // Raw member uploader instance
+  upload,        // post upload middleware
+  memberUpload,  // member multi-field upload
+  postUploader,  // raw post multer instance (optional)
+  memberUploader // raw member multer instance (optional)
 };
